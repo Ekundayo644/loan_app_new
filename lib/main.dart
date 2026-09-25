@@ -12,7 +12,7 @@ import 'package:loan_app_new/utils/theme.dart';
 // 🔑 ADD YOUR SUPABASE CREDENTIALS HERE
 // Get these from: https://app.supabase.com/project/_/settings/api
 const String supabaseUrl = 'https://adxjesmeaqmykbpjulhb.supabase.co';
-const String supabaseAnonKey = 'sb_publishable_NKnTQlfZGEitGFt9MAk63A_Iq569Afn';
+const String supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFkeGplc21lYXFteWticGp1bGhiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODczMjA5OTgsImV4cCI6MjEwMjg5Njk5OH0.MeEuII8PjObQUGjaRb7_0Oxs90pF5jIkl9DFudEm4EE';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
