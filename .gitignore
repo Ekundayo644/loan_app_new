@@ -48,3 +48,4 @@ app.*.map.json
 *.hprof
 *.hprof.*
 .kilo/
+supabase/

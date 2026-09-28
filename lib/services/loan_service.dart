@@ -175,8 +175,6 @@ class LoanService {
   }
 
   // ============= CUSTOMER: SUBMIT PENDING REPAYMENT =============
-  // Customer says "I made the transfer." Creates a pending repayment
-  // that the agent must confirm before it counts.
   Future<Map<String, dynamic>> submitPendingRepayment({
     required int loanId,
     required double amount,
@@ -187,7 +185,6 @@ class LoanService {
       final user = _supabase.auth.currentUser;
       if (user == null) throw Exception('User not logged in');
 
-      // Early duplicate check — better UX than a raw DB constraint error
       final existing = await _supabase
           .from('repayments')
           .select('id')
@@ -223,8 +220,6 @@ class LoanService {
   }
 
   // ============= AGENT: CONFIRM REPAYMENT =============
-  // Flips a pending repayment to 'confirmed' and recomputes the loan's
-  // paid_amount from ALL confirmed repayments.
   Future<Map<String, dynamic>> confirmRepayment(int repaymentId) async {
     try {
       final user = _supabase.auth.currentUser;
@@ -246,7 +241,6 @@ class LoanService {
         'confirmed_at': DateTime.now().toIso8601String(),
       }).eq('id', repaymentId);
 
-      // Recalculate paid_amount from ALL confirmed repayments for this loan
       final loanId = repayment['loan_id'] as int;
       final allConfirmed = await _supabase
           .from('repayments')
@@ -325,7 +319,6 @@ class LoanService {
           .eq('id', loanId)
           .single();
 
-      // Only count CONFIRMED repayments
       final repayments = await _supabase
           .from('repayments')
           .select('amount')
@@ -354,6 +347,12 @@ class LoanService {
   }
 
   // ============= PAYSTACK PAYMENT INTEGRATION =============
+  // Calls the Supabase Edge Function `clever-worker`, which holds the
+  // Paystack secret key and actually talks to Paystack's API.
+  //
+  // Rename 'clever-worker' below to match the exact function name you
+  // deployed in the Supabase Dashboard.
+
   Future<Map<String, dynamic>> initializePaystackPayment({
     required int loanId,
     required double amount,
@@ -361,29 +360,31 @@ class LoanService {
     String? reference,
   }) async {
     try {
-      final paymentData = {
-        'loan_id': loanId,
-        'amount': amount,
-        'email': email,
-        'reference':
-            reference ?? 'TXN_${DateTime.now().millisecondsSinceEpoch}',
-        'status': 'pending',
-        'created_at': DateTime.now().toIso8601String(),
-      };
+      final ref = reference ?? 'TXN_${DateTime.now().millisecondsSinceEpoch}';
 
-      final response = await _supabase
-          .from('payments')
-          .insert(paymentData)
-          .select()
-          .single();
+      final response = await _supabase.functions.invoke(
+        'clever-worker',
+        body: {
+          'action': 'initialize',
+          'loan_id': loanId,
+          'amount': amount,
+          'email': email,
+          'reference': ref,
+        },
+      );
 
-      return {
-        'success': true,
-        'data': response,
-        'authorization_url':
-            'https://paystack.com/pay/${response['reference']}',
-        'reference': response['reference'],
-      };
+      if (response.status != 200) {
+        throw Exception('Payment initialization failed: ${response.data}');
+      }
+
+      final data = response.data as Map<String, dynamic>;
+
+      // Some Paystack error responses come back with a 200 but an `error` key.
+      if (data.containsKey('error')) {
+        throw Exception(data['error'].toString());
+      }
+
+      return data;
     } catch (e) {
       throw Exception('Payment initialization failed: $e');
     }
@@ -391,17 +392,25 @@ class LoanService {
 
   Future<Map<String, dynamic>> verifyPaystackPayment(String reference) async {
     try {
-      final response = await _supabase
-          .from('payments')
-          .select()
-          .eq('reference', reference)
-          .single();
+      final response = await _supabase.functions.invoke(
+        'clever-worker',
+        body: {
+          'action': 'verify',
+          'reference': reference,
+        },
+      );
 
-      return {
-        'success': true,
-        'data': response,
-        'status': 'success',
-      };
+      if (response.status != 200) {
+        throw Exception('Payment verification failed: ${response.data}');
+      }
+
+      final data = response.data as Map<String, dynamic>;
+
+      if (data.containsKey('error')) {
+        throw Exception(data['error'].toString());
+      }
+
+      return data;
     } catch (e) {
       throw Exception('Payment verification failed: $e');
     }

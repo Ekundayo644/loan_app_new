@@ -53,6 +53,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   String get role => _appUser?.role ?? 'customer';
+  String? get email => _user?.email;
 
   Future<void> _refresh() async {
     try {
