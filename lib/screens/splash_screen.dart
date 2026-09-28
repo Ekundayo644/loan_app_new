@@ -13,14 +13,13 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    // ✅ Defer to the next frame so any notifyListeners() inside
-    // checkAuthStatus() doesn't fire during the widget build phase.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkAuth();
     });
   }
 
   Future<void> _checkAuth() async {
+    if (!mounted) return;
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
     // Check auth status
@@ -44,30 +43,30 @@ class _SplashScreenState extends State<SplashScreen> {
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
+          children: const [
+            Icon(
               Icons.account_balance,
               size: 80,
               color: Colors.blue,
             ),
-            const SizedBox(height: 20),
-            const Text(
+            SizedBox(height: 20),
+            Text(
               'Loan App',
               style: TextStyle(
                 fontSize: 32,
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 10),
-            const Text(
+            SizedBox(height: 10),
+            Text(
               'Smart Loans, Better Life',
               style: TextStyle(
                 fontSize: 16,
                 color: Colors.grey,
               ),
             ),
-            const SizedBox(height: 40),
-            const CircularProgressIndicator(),
+            SizedBox(height: 40),
+            CircularProgressIndicator(),
           ],
         ),
       ),

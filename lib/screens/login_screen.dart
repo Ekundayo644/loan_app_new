@@ -40,7 +40,7 @@ class _LoginScreenState extends State<LoginScreen> {
         _emailController.text.trim(),
         _passwordController.text,
       );
-      
+
       if (mounted) {
         Navigator.pushReplacement(
           context,
@@ -49,7 +49,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } catch (e) {
       if (mounted) {
-        showToast(e.toString(), isError: true);
+        showToast(e.toString().replaceFirst('Exception: ', ''), isError: true);
       }
     } finally {
       if (mounted) {
@@ -70,7 +70,6 @@ class _LoginScreenState extends State<LoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 20),
-                // Logo
                 Center(
                   child: Container(
                     width: 120,
@@ -93,7 +92,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         height: 120,
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) {
-                          // Fallback if image doesn't exist
                           return Icon(
                             Icons.account_balance_wallet,
                             size: 60,
@@ -108,18 +106,20 @@ class _LoginScreenState extends State<LoginScreen> {
                 Center(
                   child: Text(
                     'Welcome Back',
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                    style: Theme.of(context)
+                        .textTheme
+                        .headlineMedium
+                        ?.copyWith(fontWeight: FontWeight.bold),
                   ),
                 ),
                 const SizedBox(height: 8),
                 Center(
                   child: Text(
                     'Sign in to continue',
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: Colors.grey[600],
-                        ),
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyLarge
+                        ?.copyWith(color: Colors.grey[600]),
                   ),
                 ),
                 const SizedBox(height: 32),

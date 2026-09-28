@@ -56,7 +56,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         password: _passwordController.text,
         role: _selectedRole,
       );
-      
+
       if (mounted) {
         showToast('Registration successful!');
         Navigator.pushReplacement(
@@ -66,7 +66,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       }
     } catch (e) {
       if (mounted) {
-        showToast(e.toString(), isError: true);
+        showToast(e.toString().replaceFirst('Exception: ', ''), isError: true);
       }
     } finally {
       if (mounted) {
@@ -99,7 +99,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 16),
-                // Logo
                 Center(
                   child: Container(
                     width: 100,
@@ -135,17 +134,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const SizedBox(height: 24),
                 Text(
                   'Create Account',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                  style: Theme.of(context)
+                      .textTheme
+                      .headlineMedium
+                      ?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'Fill in your details to get started',
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 14,
-                  ),
+                  style: TextStyle(color: Colors.grey[600], fontSize: 14),
                 ),
                 const SizedBox(height: 24),
                 CustomTextField(
@@ -153,7 +150,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   label: 'Full Name',
                   hint: 'Enter your full name',
                   prefixIcon: Icons.person_outline,
-                  validator: (value) => Validators.validateRequired(value, 'Full name'),
+                  validator: (value) =>
+                      Validators.validateRequired(value, 'Full name'),
                 ),
                 const SizedBox(height: 16),
                 CustomTextField(
@@ -229,13 +227,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                   items: const [
                     DropdownMenuItem(
-                      value: 'customer',
-                      child: Text('Customer'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'agent',
-                      child: Text('Agent'),
-                    ),
+                        value: 'customer', child: Text('Customer')),
+                    DropdownMenuItem(value: 'agent', child: Text('Agent')),
                   ],
                   onChanged: (value) {
                     setState(() {

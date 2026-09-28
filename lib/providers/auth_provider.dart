@@ -1,34 +1,142 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:loan_app_new/models/user.dart' show AppUser;
-import 'package:loan_app_new/services/auth_service.dart';
+
+import '../models/user.dart' show AppUser;
+import '../services/auth_service.dart';
 
 class AuthProvider extends ChangeNotifier {
-  final AuthService _authService = AuthService();
+  AuthProvider() {
+    _auth = AuthService();
 
-  AppUser? _user;
-  bool _isLoading = false;
-  String? _errorMessage;
-  bool _isAuthenticated = false;
+    // Subscribe to Supabase auth state changes
+    _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((state) async {
+      _session = state.session;
+      _user = state.session?.user;
+      if (_user != null) {
+        await _refresh();
+      } else {
+        _appUser = null;
+        notifyListeners();
+      }
+    });
 
-  AppUser? get user => _user;
-  bool get isLoading => _isLoading;
-  String? get errorMessage => _errorMessage;
-  bool get isAuthenticated => _isAuthenticated;
+    // Seed initial state from persisted session (cold start)
+    _session = Supabase.instance.client.auth.currentSession;
+    _user = _session?.user;
+    if (_user != null) {
+      _refresh();
+    }
+  }
 
-  // ============= REGISTER =============
-  Future<bool> register({
+  late final AuthService _auth;
+  late final dynamic _authSub;
+
+  Session? _session;
+  User? _user;
+  AppUser? _appUser;
+
+  // ---------- Getters ----------
+  bool get isLoggedIn => _user != null;
+  bool get isAuthenticated => _user != null; // used by splash_screen
+  User? get user => _user;
+  Session? get session => _session;
+  AppUser? get appUser => _appUser;
+  AppUser? get profile => _appUser;
+
+  /// Best-effort display name: DB full_name → metadata full_name → email prefix
+  String get displayName {
+    final p = _appUser;
+    if (p != null && p.fullName.isNotEmpty) return p.fullName;
+    final meta = _user?.userMetadata?['full_name']?.toString();
+    if (meta != null && meta.isNotEmpty) return meta;
+    return _user?.email?.split('@').first ?? 'User';
+  }
+
+  String get role => _appUser?.role ?? 'customer';
+
+  Future<void> _refresh() async {
+    try {
+      _appUser = await _auth.getCurrentUser();
+      debugPrint('✅ AuthProvider: user=${_appUser?.fullName} role=${_appUser?.role}');
+    } catch (e, st) {
+      _appUser = null;
+      debugPrint('❌ AuthProvider._refresh failed: $e');
+      debugPrint('$st');
+    }
+    notifyListeners();
+  }
+
+  /// Reload profile from DB (public).
+  Future<void> loadProfile() => _refresh();
+
+  /// Called by splash_screen — checks session and loads profile if present.
+  Future<void> checkAuthStatus() async {
+    _session = Supabase.instance.client.auth.currentSession;
+    _user = _session?.user;
+    if (_user != null) {
+      await _refresh();
+    } else {
+      _appUser = null;
+      notifyListeners();
+    }
+  }
+
+  // ---------- Login (matches screens) ----------
+  /// Returns null on success, or an error message string.
+  Future<String?> login(String email, String password) async {
+    try {
+      await _auth.login(email, password);
+      await _refresh();
+      return null;
+    } on AuthException catch (e) {
+      return e.message;
+    } catch (e) {
+      return e.toString().replaceFirst('Exception: ', '');
+    }
+  }
+
+  // ---------- Register (matches screens) ----------
+  /// Returns null on success, or an error message string.
+  Future<String?> register({
     required String fullName,
     required String email,
     required String phone,
     required String password,
     String role = 'customer',
   }) async {
-    _setLoading(true);
-    _clearError();
-
     try {
-      final user = await _authService.register(
+      await _auth.register(
+        fullName: fullName,
+        email: email,
+        phone: phone,
+        password: password,
+        role: role,
+      );
+      // If email confirmation is enabled, no session exists yet — don't
+      // try to fetch the profile or the user will appear signed out.
+      if (Supabase.instance.client.auth.currentSession != null) {
+        await _refresh();
+      }
+      return null;
+    } on AuthException catch (e) {
+      return e.message;
+    } catch (e) {
+      return e.toString().replaceFirst('Exception: ', '');
+    }
+  }
+
+  // ---------- Aliases for code that calls signIn/signUp ----------
+  Future<String?> signIn({required String email, required String password}) =>
+      login(email, password);
+
+  Future<String?> signUp({
+    required String fullName,
+    required String email,
+    required String phone,
+    required String password,
+    String role = 'customer',
+  }) =>
+      register(
         fullName: fullName,
         email: email,
         phone: phone,
@@ -36,103 +144,24 @@ class AuthProvider extends ChangeNotifier {
         role: role,
       );
 
-      _user = user;
-      _isAuthenticated = Supabase.instance.client.auth.currentSession != null;
-
-      _setLoading(false);
-      notifyListeners();
-      return true;
-    } catch (e) {
-      _setError(e.toString());
-      _setLoading(false);
-      return false;
-    }
-  }
-
-  // ============= LOGIN =============
-  Future<bool> login(String email, String password) async {
-    _setLoading(true);
-    _clearError();
-
-    try {
-      final user = await _authService.login(email, password);
-
-      _user = user;
-      _isAuthenticated = Supabase.instance.client.auth.currentSession != null;
-
-      _setLoading(false);
-      notifyListeners();
-      return true;
-    } catch (e) {
-      _setError(e.toString());
-      _setLoading(false);
-      return false;
-    }
-  }
-
-  // ============= LOGOUT =============
+  // ---------- Logout ----------
   Future<void> logout() async {
-    _setLoading(true);
     try {
-      await _authService.logout();
-      _user = null;
-      _isAuthenticated = false;
-      _errorMessage = null;
-      _setLoading(false);
-      notifyListeners();
+      await _auth.logout();
     } catch (e) {
-      _setError(e.toString());
-      _setLoading(false);
-      notifyListeners();
+      debugPrint('❌ logout failed: $e');
     }
-  }
-
-  // ============= CHECK AUTH STATUS =============
-  Future<void> checkAuthStatus() async {
-    try {
-      final session = Supabase.instance.client.auth.currentSession;
-
-      if (session == null) {
-        _user = null;
-        _isAuthenticated = false;
-        notifyListeners();
-        return;
-      }
-
-      final user = await _authService.getCurrentUser();
-      if (user != null) {
-        _user = user;
-        _isAuthenticated = true;
-      } else {
-        _user = null;
-        _isAuthenticated = false;
-      }
-      notifyListeners();
-    } catch (e) {
-      _setError(e.toString());
-      _user = null;
-      _isAuthenticated = false;
-      notifyListeners();
-    }
-  }
-
-  // ============= GET TOKEN =============
-  Future<String?> getToken() async {
-    return await _authService.getToken();
-  }
-
-  // ============= PRIVATE METHODS =============
-  void _setLoading(bool loading) {
-    _isLoading = loading;
+    _session = null;
+    _user = null;
+    _appUser = null;
     notifyListeners();
   }
 
-  void _setError(String error) {
-    _errorMessage = error;
-    notifyListeners();
-  }
+  Future<void> signOut() => logout();
 
-  void _clearError() {
-    _errorMessage = null;
+  @override
+  void dispose() {
+    _authSub.cancel();
+    super.dispose();
   }
 }

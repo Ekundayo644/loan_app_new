@@ -22,20 +22,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    _loadData();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await _loadData();
+    });
   }
 
   Future<void> _loadData() async {
+    if (!mounted) return;
     final loanProvider = context.read<LoanProvider>();
-    await loanProvider.fetchLoans();
+    try {
+      await loanProvider.fetchLoans();
+    } catch (e) {
+      debugPrint('❌ fetchLoans failed: $e');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
     final user = authProvider.user;
+    final role = authProvider.role;
 
-    if (user?.role == 'agent' || user?.role == 'admin') {
+    if (role == 'agent' || role == 'admin') {
       return const AgentDashboardScreen();
     }
 
@@ -70,18 +79,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.notifications_outlined),
-            onPressed: () {
-              // Navigate to notifications
-            },
+            onPressed: () {},
           ),
           IconButton(
             icon: const Icon(Icons.history),
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => const LoanHistoryScreen(),
-                ),
+                MaterialPageRoute(builder: (_) => const LoanHistoryScreen()),
               );
             },
           ),
@@ -89,6 +94,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             icon: const Icon(Icons.logout),
             onPressed: () async {
               await authProvider.logout();
+              if (!mounted) return;
               Navigator.pushReplacementNamed(context, '/login');
             },
           ),
@@ -101,7 +107,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Welcome Section
+              // Welcome section
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -138,80 +144,82 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Hello, ${user?.fullName ?? 'User'} 👋',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Hello, ${authProvider.displayName} 👋',
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ),
-                        Text(
-                          'Welcome to your loan dashboard',
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.8),
-                            fontSize: 14,
+                          Text(
+                            'Welcome to your loan dashboard',
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.8),
+                              fontSize: 14,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 24),
 
-              // Stats Cards
+              // Stats
               Consumer<LoanProvider>(
                 builder: (context, provider, child) {
                   final stats = provider.getStatistics();
-                  return Row(
+                  return Column(
                     children: [
-                      Expanded(
-                        child: StatCard(
-                          title: 'Active Loans',
-                          value: stats['active'] ?? 0,
-                          icon: Icons.payment,
-                          color: Colors.blue,
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: StatCard(
+                              title: 'Active Loans',
+                              value: stats['active'] ?? 0,
+                              icon: Icons.payment,
+                              color: Colors.blue,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: StatCard(
+                              title: 'Pending',
+                              value: stats['pending'] ?? 0,
+                              icon: Icons.hourglass_empty,
+                              color: Colors.orange,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: StatCard(
-                          title: 'Pending',
-                          value: stats['pending'] ?? 0,
-                          icon: Icons.hourglass_empty,
-                          color: Colors.orange,
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 12),
-              Consumer<LoanProvider>(
-                builder: (context, provider, child) {
-                  final stats = provider.getStatistics();
-                  return Row(
-                    children: [
-                      Expanded(
-                        child: StatCard(
-                          title: 'Total Loans',
-                          value: stats['total'] ?? 0,
-                          icon: Icons.assignment,
-                          color: Colors.green,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: StatCard(
-                          title: 'Completed',
-                          value: stats['completed'] ?? 0,
-                          icon: Icons.check_circle,
-                          color: Colors.green,
-                        ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: StatCard(
+                              title: 'Total Loans',
+                              value: stats['total'] ?? 0,
+                              icon: Icons.assignment,
+                              color: Colors.green,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: StatCard(
+                              title: 'Completed',
+                              value: stats['completed'] ?? 0,
+                              icon: Icons.check_circle,
+                              color: Colors.green,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   );
@@ -219,12 +227,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               const SizedBox(height: 24),
 
-              // Quick Actions
+              // Quick actions
               Text(
                 'Quick Actions',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
               Row(
@@ -238,8 +247,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => const ApplyLoanScreen(),
-                          ),
+                              builder: (_) => const ApplyLoanScreen()),
                         );
                       },
                     ),
@@ -254,8 +262,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => const LoanHistoryScreen(),
-                          ),
+                              builder: (_) => const LoanHistoryScreen()),
                         );
                       },
                     ),
@@ -274,8 +281,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => const LoanHistoryScreen(),
-                          ),
+                              builder: (_) => const LoanHistoryScreen()),
                         );
                       },
                     ),
@@ -290,56 +296,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => const GuarantorScreen(),
-                          ),
+                              builder: (_) => const GuarantorScreen()),
                         );
                       },
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: QuickActionCard(
-                      title: 'Support',
-                      icon: Icons.support_agent,
-                      color: Colors.purple,
-                      onTap: () {
-                        // Navigate to support
-                      },
-                    ),
-                  ),
-                  const Spacer(),
-                ],
-              ),
               const SizedBox(height: 24),
 
-              // Recent Loans
+              // Recent loans
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
                     'Recent Loans',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(fontWeight: FontWeight.bold),
                   ),
                   TextButton(
                     onPressed: () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => const LoanHistoryScreen(),
-                        ),
+                            builder: (_) => const LoanHistoryScreen()),
                       );
                     },
                     child: const Text('View All'),
                   ),
                 ],
               ),
-
               Consumer<LoanProvider>(
                 builder: (context, provider, child) {
                   if (provider.isLoading) {
@@ -350,7 +338,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     );
                   }
-
                   final loans = provider.loans;
                   if (loans.isEmpty) {
                     return Center(
@@ -358,11 +345,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 32),
                         child: Column(
                           children: [
-                            Icon(
-                              Icons.assignment_outlined,
-                              size: 64,
-                              color: Colors.grey[400],
-                            ),
+                            Icon(Icons.assignment_outlined,
+                                size: 64, color: Colors.grey[400]),
                             const SizedBox(height: 12),
                             Text(
                               'No loans yet',
@@ -385,8 +369,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (_) => const ApplyLoanScreen(),
-                                  ),
+                                      builder: (_) =>
+                                          const ApplyLoanScreen()),
                                 );
                               },
                               icon: const Icon(Icons.add),
@@ -397,7 +381,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     );
                   }
-
                   return ListView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
@@ -410,9 +393,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => LoanDetailsScreen(
-                                loanId: loan.id,
-                              ),
+                              builder: (_) =>
+                                  LoanDetailsScreen(loanId: loan.id),
                             ),
                           );
                         },

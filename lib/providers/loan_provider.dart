@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:loan_app_new/models/loan.dart';
 import 'package:loan_app_new/models/transaction.dart';
 import 'package:loan_app_new/models/repayment.dart';
@@ -27,6 +28,26 @@ class LoanProvider extends ChangeNotifier {
   Map<String, dynamic>? get loanDetails => _loanDetails;
   bool get isLoading => _isLoading;
   String? get error => _error;
+
+  // ============= SAFE NOTIFY =============
+  /// Defers notifyListeners() to after the current frame if we're in a
+  /// build/layout/paint phase. Prevents "setState() called during build".
+  void _safeNotify() {
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.persistentCallbacks ||
+        phase == SchedulerPhase.midFrameMicrotasks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        notifyListeners();
+      });
+    } else {
+      notifyListeners();
+    }
+  }
+
+  void _setLoading(bool loading) {
+    _isLoading = loading;
+    _safeNotify();
+  }
 
   // ============= LOAN MANAGEMENT =============
 
@@ -156,8 +177,6 @@ class LoanProvider extends ChangeNotifier {
 
   // ============= REPAYMENT MANAGEMENT =============
 
-  /// Customer submits a pending repayment ("I have transferred").
-  /// The loan balance is NOT affected until an agent confirms.
   Future<Map<String, dynamic>> submitPendingRepayment({
     required int loanId,
     required double amount,
@@ -184,8 +203,6 @@ class LoanProvider extends ChangeNotifier {
     }
   }
 
-  /// Agent confirms a pending repayment. This is when `paid_amount`
-  /// actually increases and the loan status is recalculated.
   Future<Map<String, dynamic>> confirmRepayment(int repaymentId) async {
     _setLoading(true);
     try {
@@ -201,7 +218,6 @@ class LoanProvider extends ChangeNotifier {
     }
   }
 
-  /// Agent rejects a pending repayment.
   Future<Map<String, dynamic>> rejectRepayment(
     int repaymentId, {
     String reason = '',
@@ -402,7 +418,6 @@ class LoanProvider extends ChangeNotifier {
     }
   }
 
-  /// Counts 'active', 'disbursed', and 'approved' toward the Active card.
   Map<String, int> getStatistics() {
     int total = _loans.length;
     int pending = _loans.where((l) => l.status == 'pending').length;
@@ -424,7 +439,7 @@ class LoanProvider extends ChangeNotifier {
     };
   }
 
-  // ============= CUSTOMER MANAGEMENT (Agent/Admin) =============
+  // ============= CUSTOMER MANAGEMENT =============
 
   Future<Map<String, dynamic>> getCustomerDetails(String customerId) async {
     _setLoading(true);
@@ -488,13 +503,6 @@ class LoanProvider extends ChangeNotifier {
     );
   }
 
-  // ============= PRIVATE METHODS =============
-
-  void _setLoading(bool loading) {
-    _isLoading = loading;
-    notifyListeners();
-  }
-
   // ============= CLEAR / RESET =============
 
   void clearData() {
@@ -505,7 +513,7 @@ class LoanProvider extends ChangeNotifier {
     _dashboardStats = null;
     _loanDetails = null;
     _error = null;
-    notifyListeners();
+    _safeNotify();
   }
 
   // ============= REFRESH ALL DATA =============
@@ -557,8 +565,6 @@ class LoanProvider extends ChangeNotifier {
               false);
     }).toList();
   }
-
-  // ============= FILTER TRANSACTIONS =============
 
   List<Transaction> filterTransactionsByStatus(String status) {
     if (status == 'All') return _transactions;

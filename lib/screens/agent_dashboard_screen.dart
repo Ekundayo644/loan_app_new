@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:loan_app_new/providers/loan_provider.dart';
 import 'package:loan_app_new/models/loan.dart';
+import 'package:loan_app_new/providers/settings_provider.dart';
 import 'package:loan_app_new/widgets/stat_card.dart';
 import 'package:loan_app_new/utils/toast_utils.dart';
 import 'package:loan_app_new/providers/auth_provider.dart';
@@ -19,25 +20,95 @@ class _AgentDashboardScreenState extends State<AgentDashboardScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   bool _isWorking = false;
+  final _interestRateController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadData();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await _loadData();
+      if (!mounted) return;
+      await _loadInitialInterestRate();
     });
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _interestRateController.dispose();
     super.dispose();
   }
 
+  Future<void> _loadInitialInterestRate() async {
+    if (!mounted) return;
+    final settingsProvider = context.read<SettingsProvider>();
+    await settingsProvider.fetchInterestRate();
+    if (!mounted) return;
+    final currentRate = settingsProvider.interestRate;
+    if (currentRate != null) {
+      _interestRateController.text = currentRate.toString();
+    }
+  }
+
   Future<void> _loadData() async {
-    final provider = context.read<LoanProvider>();
-    await provider.fetchAllLoans();
+    if (!mounted) return;
+    final loanProvider = context.read<LoanProvider>();
+    try {
+      await loanProvider.fetchAllLoans();
+      debugPrint('✅ Loans loaded: ${loanProvider.loans.length}');
+    } catch (e) {
+      debugPrint('❌ fetchAllLoans failed: $e');
+    }
+  }
+
+  Future<void> _updateInterestRate() async {
+    final newRate = double.tryParse(_interestRateController.text);
+    if (newRate == null) {
+      showToast('Invalid interest rate', isError: true);
+      return;
+    }
+    if (!mounted) return;
+    final settingsProvider = context.read<SettingsProvider>();
+    try {
+      await settingsProvider.updateInterestRate(newRate);
+      if (!mounted) return;
+      showToast('Interest rate updated successfully');
+    } catch (e) {
+      if (!mounted) return;
+      showToast('Failed to update interest rate: $e', isError: true);
+    }
+  }
+
+  Future<void> _showInterestRateDialog() async {
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Update Interest Rate'),
+        content: TextFormField(
+          controller: _interestRateController,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            labelText: 'New Rate (%)',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              await _updateInterestRate();
+              if (dialogContext.mounted) Navigator.pop(dialogContext);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _logout() async {
@@ -60,13 +131,14 @@ class _AgentDashboardScreenState extends State<AgentDashboardScreen>
       ),
     );
     if (confirmed != true) return;
-
+    if (!mounted) return;
     try {
       final authProvider = context.read<AuthProvider>();
       await authProvider.logout();
       if (!mounted) return;
       Navigator.pushReplacementNamed(context, '/login');
     } catch (e) {
+      if (!mounted) return;
       showToast('Logout failed: $e', isError: true);
     }
   }
@@ -74,11 +146,14 @@ class _AgentDashboardScreenState extends State<AgentDashboardScreen>
   Future<void> _approveLoan(int loanId) async {
     setState(() => _isWorking = true);
     try {
+      if (!mounted) return;
       final provider = context.read<LoanProvider>();
       await provider.approveLoan(loanId);
+      if (!mounted) return;
       showToast('Loan #$loanId approved');
       await _loadData();
     } catch (e) {
+      if (!mounted) return;
       showToast('Failed to approve: $e', isError: true);
     } finally {
       if (mounted) setState(() => _isWorking = false);
@@ -88,14 +163,16 @@ class _AgentDashboardScreenState extends State<AgentDashboardScreen>
   Future<void> _rejectLoan(int loanId) async {
     final reason = await _askRejectionReason();
     if (reason == null) return;
-
+    if (!mounted) return;
     setState(() => _isWorking = true);
     try {
       final provider = context.read<LoanProvider>();
       await provider.rejectLoan(loanId, reason: reason);
+      if (!mounted) return;
       showToast('Loan #$loanId rejected');
       await _loadData();
     } catch (e) {
+      if (!mounted) return;
       showToast('Failed to reject: $e', isError: true);
     } finally {
       if (mounted) setState(() => _isWorking = false);
@@ -122,14 +199,16 @@ class _AgentDashboardScreenState extends State<AgentDashboardScreen>
       ),
     );
     if (confirmed != true) return;
-
+    if (!mounted) return;
     setState(() => _isWorking = true);
     try {
       final provider = context.read<LoanProvider>();
       await provider.disburseLoan(loanId);
+      if (!mounted) return;
       showToast('Loan #$loanId disbursed');
       await _loadData();
     } catch (e) {
+      if (!mounted) return;
       showToast('Failed to disburse: $e', isError: true);
     } finally {
       if (mounted) setState(() => _isWorking = false);
@@ -253,81 +332,110 @@ class _AgentDashboardScreenState extends State<AgentDashboardScreen>
                   l.status == 'completed')
               .toList();
 
-          return RefreshIndicator(
-            onRefresh: _loadData,
-            child: Column(
-              children: [
-                if (user != null)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
-                    color: Theme.of(context).primaryColor.withOpacity(0.05),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.person, size: 16, color: Colors.grey),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Agent: ${user.fullName}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w500,
-                            fontSize: 13,
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          user.email,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                Padding(
-                  padding: const EdgeInsets.all(16),
+          return Column(
+            children: [
+              // ---------- Compact agent info row ----------
+              if (user != null)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 8),
+                  color: Theme.of(context).primaryColor.withOpacity(0.05),
                   child: Row(
                     children: [
+                      const Icon(Icons.person, size: 14, color: Colors.grey),
+                      const SizedBox(width: 6),
                       Expanded(
-                        child: StatCard(
-                          title: 'Total',
-                          value: stats['total'] ?? 0,
-                          icon: Icons.assignment,
-                          color: Colors.blue,
+                        child: Text(
+                          'Agent: ${authProvider.displayName}',
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: StatCard(
-                          title: 'Pending',
-                          value: stats['pending'] ?? 0,
-                          icon: Icons.hourglass_empty,
-                          color: Colors.orange,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: StatCard(
-                          title: 'Active',
-                          value: stats['active'] ?? 0,
-                          icon: Icons.payment,
-                          color: Colors.green,
+                      Text(
+                        user.email ?? '',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey[600],
                         ),
                       ),
                     ],
                   ),
                 ),
 
-                if (_isWorking) const LinearProgressIndicator(),
+              // ---------- Compact stat cards ----------
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: StatCard(
+                        title: 'Total',
+                        value: stats['total'] ?? 0,
+                        icon: Icons.assignment,
+                        color: Colors.blue,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: StatCard(
+                        title: 'Pending',
+                        value: stats['pending'] ?? 0,
+                        icon: Icons.hourglass_empty,
+                        color: Colors.orange,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: StatCard(
+                        title: 'Active',
+                        value: stats['active'] ?? 0,
+                        icon: Icons.payment,
+                        color: Colors.green,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
 
-                Expanded(
-                  child: provider.isLoading
-                      ? const Center(child: CircularProgressIndicator())
-                      : TabBarView(
+              // ---------- Interest rate button (opens dialog) ----------
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _showInterestRateDialog,
+                    icon: const Icon(Icons.tune, size: 16),
+                    label: Text(
+                      'Interest Rate: ${_interestRateController.text.isEmpty ? "—" : "${_interestRateController.text}%"}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      alignment: Alignment.centerLeft,
+                    ),
+                  ),
+                ),
+              ),
+
+              if (_isWorking)
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: LinearProgressIndicator(),
+                ),
+
+              // ---------- Tab content (only Expanded) ----------
+              Expanded(
+                child: provider.isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : RefreshIndicator(
+                        onRefresh: _loadData,
+                        child: TabBarView(
                           controller: _tabController,
                           children: [
                             _buildLoanList(
@@ -343,7 +451,8 @@ class _AgentDashboardScreenState extends State<AgentDashboardScreen>
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: Colors.green,
                                       ),
-                                      icon: const Icon(Icons.check, size: 16),
+                                      icon:
+                                          const Icon(Icons.check, size: 16),
                                       label: const Text('Approve'),
                                     ),
                                   ),
@@ -358,7 +467,8 @@ class _AgentDashboardScreenState extends State<AgentDashboardScreen>
                                         side: const BorderSide(
                                             color: Colors.red),
                                       ),
-                                      icon: const Icon(Icons.close, size: 16),
+                                      icon:
+                                          const Icon(Icons.close, size: 16),
                                       label: const Text('Reject'),
                                     ),
                                   ),
@@ -402,7 +512,8 @@ class _AgentDashboardScreenState extends State<AgentDashboardScreen>
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: Colors.indigo,
                                       ),
-                                      icon: const Icon(Icons.people, size: 16),
+                                      icon: const Icon(Icons.people,
+                                          size: 16),
                                       label: const Text('Guarantors'),
                                     ),
                                   ),
@@ -411,9 +522,9 @@ class _AgentDashboardScreenState extends State<AgentDashboardScreen>
                             ),
                           ],
                         ),
-                ),
-              ],
-            ),
+                      ),
+              ),
+            ],
           );
         },
       ),
@@ -490,11 +601,13 @@ class _AgentDashboardScreenState extends State<AgentDashboardScreen>
                 if (loan.customerName != null) ...[
                   Row(
                     children: [
-                      const Icon(Icons.person, size: 14, color: Colors.grey),
+                      const Icon(Icons.person,
+                          size: 14, color: Colors.grey),
                       const SizedBox(width: 4),
                       Text(
                         loan.customerName!,
-                        style: const TextStyle(fontWeight: FontWeight.w500),
+                        style:
+                            const TextStyle(fontWeight: FontWeight.w500),
                       ),
                     ],
                   ),
@@ -539,7 +652,8 @@ class _AgentDashboardScreenState extends State<AgentDashboardScreen>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+          Text(label,
+              style: TextStyle(color: Colors.grey[600], fontSize: 13)),
           Flexible(
             child: Text(
               value,
@@ -574,7 +688,7 @@ class _AgentDashboardScreenState extends State<AgentDashboardScreen>
 }
 
 // ============================================================
-// Repayments dialog — with confirm/reject for pending payments
+// Repayments dialog
 // ============================================================
 
 class _RepaymentsDialog extends StatefulWidget {
@@ -624,11 +738,14 @@ class _RepaymentsDialogState extends State<_RepaymentsDialog> {
   Future<void> _confirm(Map<String, dynamic> r) async {
     setState(() => _isWorking = true);
     try {
+      if (!mounted) return;
       final provider = context.read<LoanProvider>();
       await provider.confirmRepayment(r['id'] as int);
+      if (!mounted) return;
       showToast('Payment confirmed');
       await _load();
     } catch (e) {
+      if (!mounted) return;
       showToast('Failed: $e', isError: true);
     } finally {
       if (mounted) setState(() => _isWorking = false);
@@ -638,14 +755,16 @@ class _RepaymentsDialogState extends State<_RepaymentsDialog> {
   Future<void> _reject(Map<String, dynamic> r) async {
     final reason = await _askReason();
     if (reason == null) return;
-
+    if (!mounted) return;
     setState(() => _isWorking = true);
     try {
       final provider = context.read<LoanProvider>();
       await provider.rejectRepayment(r['id'] as int, reason: reason);
+      if (!mounted) return;
       showToast('Payment rejected');
       await _load();
     } catch (e) {
+      if (!mounted) return;
       showToast('Failed: $e', isError: true);
     } finally {
       if (mounted) setState(() => _isWorking = false);
@@ -755,7 +874,8 @@ class _RepaymentsDialogState extends State<_RepaymentsDialog> {
                     color: Colors.teal.withOpacity(0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.receipt_long, color: Colors.teal),
+                  child:
+                      const Icon(Icons.receipt_long, color: Colors.teal),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -787,7 +907,6 @@ class _RepaymentsDialogState extends State<_RepaymentsDialog> {
               ],
             ),
             const Divider(),
-
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -812,9 +931,7 @@ class _RepaymentsDialogState extends State<_RepaymentsDialog> {
               ),
             ),
             const SizedBox(height: 12),
-
             if (_isWorking) const LinearProgressIndicator(),
-
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
@@ -857,15 +974,16 @@ class _RepaymentsDialogState extends State<_RepaymentsDialog> {
                                         children: [
                                           CircleAvatar(
                                             radius: 16,
-                                            backgroundColor: _statusColor(
-                                                    status)
-                                                .withOpacity(0.15),
+                                            backgroundColor:
+                                                _statusColor(status)
+                                                    .withOpacity(0.15),
                                             child: Icon(
                                               status == 'confirmed'
                                                   ? Icons.check
                                                   : status == 'rejected'
                                                       ? Icons.close
-                                                      : Icons.hourglass_empty,
+                                                      : Icons
+                                                          .hourglass_empty,
                                               size: 16,
                                               color: _statusColor(status),
                                             ),
@@ -874,12 +992,15 @@ class _RepaymentsDialogState extends State<_RepaymentsDialog> {
                                           Expanded(
                                             child: Column(
                                               crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
+                                                  CrossAxisAlignment
+                                                      .start,
                                               children: [
                                                 Text(
                                                   _money(r['amount']),
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.bold,
+                                                  style:
+                                                      const TextStyle(
+                                                    fontWeight:
+                                                        FontWeight.bold,
                                                     fontSize: 15,
                                                   ),
                                                 ),
@@ -887,14 +1008,16 @@ class _RepaymentsDialogState extends State<_RepaymentsDialog> {
                                                   'Method: ${r['payment_method'] ?? 'N/A'}',
                                                   style: TextStyle(
                                                     fontSize: 11,
-                                                    color: Colors.grey[600],
+                                                    color:
+                                                        Colors.grey[600],
                                                   ),
                                                 ),
                                                 Text(
                                                   'Ref: ${r['transaction_id'] ?? 'N/A'}',
                                                   style: TextStyle(
                                                     fontSize: 11,
-                                                    color: Colors.grey[600],
+                                                    color:
+                                                        Colors.grey[600],
                                                   ),
                                                 ),
                                                 Text(
@@ -902,7 +1025,8 @@ class _RepaymentsDialogState extends State<_RepaymentsDialog> {
                                                       r['created_at']),
                                                   style: TextStyle(
                                                     fontSize: 11,
-                                                    color: Colors.grey[500],
+                                                    color:
+                                                        Colors.grey[500],
                                                   ),
                                                 ),
                                               ],
@@ -921,9 +1045,11 @@ class _RepaymentsDialogState extends State<_RepaymentsDialog> {
                                             child: Text(
                                               status.toUpperCase(),
                                               style: TextStyle(
-                                                color: _statusColor(status),
+                                                color:
+                                                    _statusColor(status),
                                                 fontSize: 10,
-                                                fontWeight: FontWeight.w700,
+                                                fontWeight:
+                                                    FontWeight.w700,
                                               ),
                                             ),
                                           ),
@@ -934,17 +1060,21 @@ class _RepaymentsDialogState extends State<_RepaymentsDialog> {
                                         Row(
                                           children: [
                                             Expanded(
-                                              child: ElevatedButton.icon(
+                                              child:
+                                                  ElevatedButton.icon(
                                                 onPressed: _isWorking
                                                     ? null
                                                     : () => _confirm(r),
-                                                style: ElevatedButton.styleFrom(
+                                                style: ElevatedButton
+                                                    .styleFrom(
                                                   backgroundColor:
                                                       Colors.green,
                                                 ),
-                                                icon: const Icon(Icons.check,
+                                                icon: const Icon(
+                                                    Icons.check,
                                                     size: 16),
-                                                label: const Text('Confirm'),
+                                                label:
+                                                    const Text('Confirm'),
                                               ),
                                             ),
                                             const SizedBox(width: 8),
@@ -953,14 +1083,18 @@ class _RepaymentsDialogState extends State<_RepaymentsDialog> {
                                                 onPressed: _isWorking
                                                     ? null
                                                     : () => _reject(r),
-                                                style: OutlinedButton.styleFrom(
-                                                  foregroundColor: Colors.red,
+                                                style: OutlinedButton
+                                                    .styleFrom(
+                                                  foregroundColor:
+                                                      Colors.red,
                                                   side: const BorderSide(
                                                       color: Colors.red),
                                                 ),
-                                                icon: const Icon(Icons.close,
+                                                icon: const Icon(
+                                                    Icons.close,
                                                     size: 16),
-                                                label: const Text('Reject'),
+                                                label:
+                                                    const Text('Reject'),
                                               ),
                                             ),
                                           ],
@@ -978,7 +1112,8 @@ class _RepaymentsDialogState extends State<_RepaymentsDialog> {
                                             style: const TextStyle(
                                               fontSize: 11,
                                               color: Colors.red,
-                                              fontStyle: FontStyle.italic,
+                                              fontStyle:
+                                                  FontStyle.italic,
                                             ),
                                           ),
                                         ),
@@ -1000,7 +1135,8 @@ class _RepaymentsDialogState extends State<_RepaymentsDialog> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(color: Colors.grey[700], fontSize: 13)),
+          Text(label,
+              style: TextStyle(color: Colors.grey[700], fontSize: 13)),
           Text(
             value,
             style: TextStyle(
@@ -1016,7 +1152,7 @@ class _RepaymentsDialogState extends State<_RepaymentsDialog> {
 }
 
 // ============================================================
-// Guarantors dialog — unchanged
+// Guarantors dialog
 // ============================================================
 
 class _GuarantorsDialog extends StatefulWidget {
@@ -1119,7 +1255,6 @@ class _GuarantorsDialogState extends State<_GuarantorsDialog> {
               ],
             ),
             const Divider(),
-
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
@@ -1137,15 +1272,17 @@ class _GuarantorsDialogState extends State<_GuarantorsDialog> {
                       : _guarantors.isEmpty
                           ? Center(
                               child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.center,
                                 children: [
                                   Icon(Icons.person_off_outlined,
-                                      size: 56, color: Colors.grey[400]),
+                                      size: 56,
+                                      color: Colors.grey[400]),
                                   const SizedBox(height: 12),
                                   Text(
                                     'No guarantors on record for this loan',
-                                    style:
-                                        TextStyle(color: Colors.grey[600]),
+                                    style: TextStyle(
+                                        color: Colors.grey[600]),
                                   ),
                                 ],
                               ),
