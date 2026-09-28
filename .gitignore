@@ -47,3 +47,4 @@ app.*.map.json
 # Java heap dumps
 *.hprof
 *.hprof.*
+.kilo/
